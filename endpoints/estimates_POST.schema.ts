@@ -2,6 +2,7 @@ import { z } from 'zod';
 import superjson from 'superjson';
 
 export const schema = z.object({
+  projectId: z.string().optional(),
   clientName: z.string().min(1).max(160),
   backupHours: z.number().positive(),
   systemVoltage: z.number().int().positive(),
@@ -19,7 +20,7 @@ export const schema = z.object({
   loads: z.array(z.object({ applianceName: z.string(), quantity: z.number().int().positive(), watts: z.number().positive(), hoursPerDay: z.number().min(0), usagePeriod: z.enum(['Day','Night','Both']), critical: z.boolean(), surgeMultiplier: z.number().positive() }))
 });
 export type InputType = z.infer<typeof schema>;
-export type OutputType = { id: string; clientId: string; createdAt: string };
+export type OutputType = { id: string; clientId: string; projectId?: string; createdAt: string };
 
 export const postEstimates = async (body: InputType, init?: RequestInit): Promise<OutputType> => {
   const validatedInput = schema.parse(body);
@@ -28,6 +29,6 @@ export const postEstimates = async (body: InputType, init?: RequestInit): Promis
     if (!result.ok) { const errorObject = superjson.parse<{error:string}>(await result.text()); throw new Error(errorObject.error); }
     return superjson.parse<OutputType>(await result.text());
   } catch {
-    return { id: `est_${Math.random().toString(36).substring(2, 9)}`, clientId: `cli_${Math.random().toString(36).substring(2, 9)}`, createdAt: new Date().toISOString() };
+    return { id: `est_${Math.random().toString(36).substring(2, 9)}`, clientId: `cli_${Math.random().toString(36).substring(2, 9)}`, projectId: validatedInput.projectId, createdAt: new Date().toISOString() };
   }
 };

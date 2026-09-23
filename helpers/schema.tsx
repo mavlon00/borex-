@@ -12,6 +12,14 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 export type Numeric = ColumnType<string, number | string, number | string>;
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface Projects {
+  createdAt: Generated<Timestamp>;
+  id: string;
+  location?: string | null;
+  name: string;
+  phone?: string | null;
+}
+
 export interface Clients {
   createdAt: Generated<Timestamp>;
   displayName: string;
@@ -39,6 +47,7 @@ export interface Estimates {
   overrides: Generated<Json>;
   panelCount: number;
   peakSurgeW: Numeric;
+  projectId?: string | null;
   recommendedBatteryAh: Numeric;
   recommendedBatteryKwh: Numeric;
   recommendedInverterKva: Numeric;
@@ -53,6 +62,7 @@ export interface DB {
   clients: Clients;
   estimateLoads: EstimateLoads;
   estimates: Estimates;
+  projects: Projects;
 }
 
 export const kyselyIdentifierOverrides: Record<string, string> = {};

@@ -1,0 +1,25 @@
+.container {
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+
+.logoImg {
+  height: 42px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+/* Sizes */
+.sm .logoImg {
+  height: 32px;
+}
+
+.md .logoImg {
+  height: 42px;
+}
+
+.lg .logoImg {
+  height: 56px;
+}

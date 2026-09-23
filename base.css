@@ -91,21 +91,23 @@ body {
   padding: 0;
   min-height: 100vh;
   position: relative;
-  background-color: #030820;
+  background: #020b33;
+  /* safe-area insets for notched phones */
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+  -webkit-text-size-adjust: 100%; /* prevent font scaling on rotation */
+  text-size-adjust: 100%;
+  touch-action: manipulation; /* disable double-tap to zoom globally */
+  overscroll-behavior-y: none; /* prevent pull-to-refresh */
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: -10;
-  background-image: url('/bg.jpeg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  pointer-events: none;
+* {
+  box-sizing: border-box;
 }
 
+/* Smooth scrolling with momentum on iOS */
+.scrollable {
+  -webkit-overflow-scrolling: touch;
+}
