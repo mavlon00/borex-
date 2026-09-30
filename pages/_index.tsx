@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Plus, Zap, BatteryCharging, Sun, Gauge, Trash2, Save, ChevronDown, ShieldCheck, ArrowLeft, FolderKanban, Check, Search, X } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, Zap, BatteryCharging, Sun, Gauge, Trash2, Save, ChevronDown, ShieldCheck, ArrowLeft, FolderKanban, Check, Search, X, Home, AlertTriangle, Layers } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { postEstimates } from '../endpoints/estimates_POST.schema';
@@ -39,6 +39,16 @@ const presets = [
 
 const categories = ['All', 'Cooling', 'Kitchen', 'Pumps', 'Laundry', 'Electronics', 'Lighting', 'Security', 'Medical'] as const;
 
+// ─── Engineering constants — source of truth — do not duplicate elsewhere ──────
+// BATTERY_DOD corrected 2026-09-25: 0.90 (LiFePO4) replaces old 0.80 (lead-acid).
+// See ENGINEERING_CHANGELOG.md for full rationale.
+const BATTERY_DOD = 0.9;
+// Approximate Nigerian market rates — defaults only; engineer can override in the UI.
+// ₦120k/kVA inverter, ₦180k/kWh LiFePO4 battery, ₦100k/kWp solar+mounting.
+const DEFAULT_RATE_KVA  = 120_000;
+const DEFAULT_RATE_KWH  = 180_000;
+const DEFAULT_RATE_KWP  = 100_000;
+
 function App() {
   const [userSession, setUserSession] = useState<UserSession | null>(() => getStoredUserSession());
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
@@ -56,6 +66,15 @@ function App() {
   const [customSearchWatts, setCustomSearchWatts] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
+  /** Which loads count toward night/battery sizing: 'whole-house' | 'essential' */
+  const [backupMode, setBackupMode] = useState<'whole-house' | 'essential'>('whole-house');
+  /** Optional project budget (local currency). Enables Option B/C tier display. */
+  const [budget, setBudget] = useState('');
+  // Cost unit-rate overrides (engineer-editable; default = Nigerian market rates)
+  const [ratePerKva, setRatePerKva] = useState(String(DEFAULT_RATE_KVA));
+  const [ratePerKwh, setRatePerKwh] = useState(String(DEFAULT_RATE_KWH));
+  const [ratePerKwp, setRatePerKwp] = useState(String(DEFAULT_RATE_KWP));
+  const [showRates, setShowRates] = useState(false);
 
   const filteredCatalog = useMemo(() => {
     return APPLIANCE_CATALOG.filter((app) => {
@@ -78,6 +97,8 @@ function App() {
       setSunHours(String(existing.sunHours));
       setBackup(String(existing.backupHours));
       setSystemVoltage(String(existing.systemVoltage));
+      setBackupMode(existing.backupMode ?? 'whole-house');
+      setBudget(existing.budget ? String(existing.budget) : '');
       setShowPresets(false);
       setShowSearch(false);
     } else {
@@ -86,6 +107,8 @@ function App() {
       setSunHours('5.0');
       setBackup('12');
       setSystemVoltage('48');
+      setBackupMode('whole-house');
+      setBudget('');
       setShowPresets(true);
       setShowSearch(false);
     }
@@ -117,7 +140,8 @@ function App() {
     setCurrentProject(null);
   };
 
-  // Sizing calculations — untouched formulas
+
+  // ─── Deterministic sizing engine (all numbers come from here — no AI involved) ─
   const totals = useMemo(() => {
     const connected = loads.reduce((s, l) => s + l.watts * l.qty, 0);
     const daily = loads.reduce((s, l) => s + (l.watts * l.qty * l.hours) / 1000, 0);
@@ -125,12 +149,66 @@ function App() {
     const occasional = loads.filter((l) => !l.critical).reduce((s, l) => s + l.watts * l.qty * l.surge, 0);
     const peak = critical + occasional * 0.6;
     const inverter = Math.ceil((peak * 1.25) / 500) * 500;
-    const nightEnergy = loads.reduce((s, l) => s + (l.period === 'Day' ? 0 : (l.watts * l.qty * l.hours) / 1000), 0);
-    const battery = (nightEnergy * Math.min(Number(backup) / 12, 1.5)) / 0.8;
+
+    // Night/backup energy: filtered by backupMode.
+    // whole-house: all non-Day loads count (previous/default behaviour).
+    // essential: only CRITICAL non-Day loads count — occasional loads are excluded
+    //            from battery sizing because they won't run during an outage.
+    const nightEnergy = loads.reduce((s, l) => {
+      if (l.period === 'Day') return s;
+      if (backupMode === 'essential' && !l.critical) return s; // skip occasional in essential mode
+      return s + (l.watts * l.qty * l.hours) / 1000;
+    }, 0);
+
+    // Battery: corrected DoD=0.90 (LiFePO4). backupFactor scales up to 1.5× for
+    // backup durations longer than 12 h (unchanged from original formula logic).
+    const backupFactor = Math.min(Number(backup) / 12, 1.5);
+    const battery = (nightEnergy * backupFactor) / BATTERY_DOD;
+
     const array = (daily * 1.25) / Math.max(Number(sunHours), 1);
     const panelCount = Math.ceil((array * 1000) / 550);
     return { connected, daily, peak, inverter, battery, array, panelCount, nightEnergy };
-  }, [loads, backup, sunHours]);
+  }, [loads, backup, sunHours, backupMode]);
+
+  // ─── Cost estimation (deterministic; rates overrideable by engineer) ──────────
+  const rKva = Math.max(Number(ratePerKva) || DEFAULT_RATE_KVA, 0);
+  const rKwh = Math.max(Number(ratePerKwh) || DEFAULT_RATE_KWH, 0);
+  const rKwp = Math.max(Number(ratePerKwp) || DEFAULT_RATE_KWP, 0);
+
+  const inverterCost = Math.round((totals.inverter / 1000) * rKva);
+  const batteryCost  = Math.round(totals.battery * rKwh);
+  const solarCost    = Math.round(totals.array   * rKwp);
+  const optionACost  = inverterCost + batteryCost + solarCost;
+
+  // ─── Option B/C: budget-tiered alternatives ───────────────────────────────────
+  // Only generated when budget is set AND below Option A cost.
+  // Inverter is NEVER reduced (safety floor; see ENGINEERING_CHANGELOG.md).
+  const budgetNum = budget ? Number(budget) : 0;
+  const showTiers = budgetNum > 0 && budgetNum < optionACost;
+
+  const optionBBattery    = totals.battery * 0.6;
+  const optionBSolar      = totals.array   * 0.75;
+  const optionBPanelCount = Math.ceil((optionBSolar * 1000) / 550);
+  const optionBBackupH    = Number(backup) * 0.6;
+  const optionBCost = Math.round(
+    (totals.inverter / 1000) * rKva +
+    optionBBattery           * rKwh +
+    optionBSolar             * rKwp
+  );
+
+  const optionCBattery      = totals.battery * 0.5;
+  const optionCSolar        = totals.array   * 0.5;
+  const optionCPanelCount   = Math.ceil((optionCSolar * 1000) / 550);
+  const optionCBackupH      = Number(backup) * 0.5;
+  const optionCPhase1Cost = Math.round(
+    (totals.inverter / 1000) * rKva +
+    optionCBattery           * rKwh +
+    optionCSolar             * rKwp
+  );
+  const optionCPhase2Cost = Math.round(
+    optionCBattery * rKwh +
+    optionCSolar   * rKwp
+  );
 
   const saveEstimate = async () => {
     if (!currentProject) return;
@@ -152,7 +230,9 @@ function App() {
         recommendedSolarKwp: totals.array,
         panelCount: totals.panelCount,
         safetyMargin: 0.25,
-        overrides: [],
+        overrides: [] as any[],
+        backupMode,
+        budget: budgetNum > 0 ? budgetNum : undefined,
         loads: loads.map((l) => ({
           applianceName: l.name,
           quantity: l.qty,
@@ -186,7 +266,9 @@ function App() {
         safetyMargin: 0.25,
         overrides: [],
         loads,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        backupMode,
+        budget: budgetNum > 0 ? budgetNum : undefined
       });
     } finally {
       setSaving(false);
@@ -264,10 +346,12 @@ function App() {
         <div className={styles.headerActions}>
           <Button onClick={saveEstimate} disabled={saving}>
             {saving ? (
-              <>Saving…</>
+              <>
+                <Save size={16} /> <span className={styles.saveBtnText}>Saving…</span>
+              </>
             ) : savedId ? (
               <>
-                <Check size={16} /> Saved
+                <Check size={16} /> <span className={styles.saveBtnText}>Saved</span>
               </>
             ) : (
               <>
@@ -306,7 +390,7 @@ function App() {
         <section className={styles.panel}>
           <div className={styles.panelHead}>
             <div>
-              <div className={styles.sectionTag}>01 / LOADS</div>
+              <div className={styles.sectionTag}>LOADS</div>
               <h2>Appliance inventory</h2>
             </div>
             <div className={styles.actions}>
@@ -464,99 +548,105 @@ function App() {
           ) : (
             loads.map((load) => (
             <div className={styles.row} key={load.id}>
-              {/* Appliance name — always shown */}
+              {/* Appliance details */}
               <div className={styles.appliance}>
                 <span className={styles.loadIcon}>
                   <Zap size={14} />
                 </span>
-                <div>
-                  <b>{load.name}</b>
-                  <small>Surge ×{load.surge} · {load.watts * load.qty} W</small>
+                <div className={styles.applianceDetails}>
+                  <div className={styles.applianceTop}>
+                    <b>{load.name}</b>
+                    {/* Mobile-only prominent delete button */}
+                    <button
+                      type="button"
+                      className={styles.mobileDeleteBtn}
+                      onClick={() => setLoads((prev) => prev.filter((x) => x.id !== load.id))}
+                      aria-label={`Delete ${load.name}`}
+                      title="Delete appliance"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <div className={styles.applianceMeta}>
+                    <span>Surge ×{load.surge}</span>
+                    <span className={styles.metaDot}>·</span>
+                    <span className={styles.mobileWattsBadge}>{load.watts * load.qty} W</span>
+                    {load.qty > 1 && <span className={styles.mobileEachWatts}>({load.watts} W ea)</span>}
+                  </div>
                 </div>
               </div>
-              {/* Qty */}
-              <Input
-                type="number"
-                value={String(load.qty)}
-                onChange={(e) => update(load.id, { qty: Math.max(1, Number(e.target.value)) })}
-              />
-              {/* Watts */}
-              <span className={styles.mono}>{load.watts * load.qty} W</span>
-              {/* Hours */}
-              <Input
-                type="number"
-                value={String(load.hours)}
-                onChange={(e) => update(load.id, { hours: Math.max(0, Number(e.target.value)) })}
-              />
-              {/* Period */}
+
+              {/* Controls: display:contents on desktop (fits grid columns), responsive 2x2 grid on mobile */}
+              <div className={styles.controlsGrid}>
+                {/* Qty */}
+                <div className={styles.controlCell}>
+                  <span className={styles.controlCellLabel}>QTY</span>
+                  <Input
+                    type="number"
+                    value={String(load.qty)}
+                    onChange={(e) => update(load.id, { qty: Math.max(1, Number(e.target.value)) })}
+                  />
+                </div>
+
+                {/* Watts (desktop only table column) */}
+                <span className={`${styles.mono} ${styles.desktopOnly}`}>{load.watts * load.qty} W</span>
+
+                {/* Hours */}
+                <div className={styles.controlCell}>
+                  <span className={styles.controlCellLabel}>HOURS/DAY</span>
+                  <Input
+                    type="number"
+                    value={String(load.hours)}
+                    onChange={(e) => update(load.id, { hours: Math.max(0, Number(e.target.value)) })}
+                  />
+                </div>
+
+                {/* Period */}
+                <div className={styles.controlCell}>
+                  <span className={styles.controlCellLabel}>PERIOD</span>
+                  <button
+                    type="button"
+                    className={styles.selectLike}
+                    onClick={() =>
+                      update(load.id, {
+                        period: load.period === 'Day' ? 'Night' : load.period === 'Night' ? 'Both' : 'Day'
+                      })
+                    }
+                  >
+                    {load.period}
+                  </button>
+                </div>
+
+                {/* Priority */}
+                <div className={styles.controlCell}>
+                  <span className={styles.controlCellLabel}>PRIORITY</span>
+                  <button
+                    type="button"
+                    className={`${styles.priority} ${load.critical ? styles.critical : ''}`}
+                    onClick={() => update(load.id, { critical: !load.critical })}
+                  >
+                    {load.critical ? 'CRITICAL' : 'OCCASIONAL'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Desktop Delete button */}
               <button
-                className={styles.selectLike}
-                onClick={() =>
-                  update(load.id, {
-                    period: load.period === 'Day' ? 'Night' : load.period === 'Night' ? 'Both' : 'Day'
-                  })
-                }
-              >
-                {load.period}
-              </button>
-              {/* Priority */}
-              <button
-                className={`${styles.priority} ${load.critical ? styles.critical : ''}`}
-                onClick={() => update(load.id, { critical: !load.critical })}
-              >
-                {load.critical ? 'CRITICAL' : 'OCCASIONAL'}
-              </button>
-              {/* Delete */}
-              <button
-                className={styles.iconBtn}
+                type="button"
+                className={`${styles.iconBtn} ${styles.desktopOnly}`}
                 onClick={() => setLoads((prev) => prev.filter((x) => x.id !== load.id))}
+                aria-label={`Delete ${load.name}`}
+                title="Delete appliance"
               >
                 <Trash2 size={15} />
               </button>
-              {/* Mobile-only control row */}
-              <div className={styles.mobileRowControls}>
-                <Input
-                  type="number"
-                  value={String(load.qty)}
-                  onChange={(e) => update(load.id, { qty: Math.max(1, Number(e.target.value)) })}
-                />
-                <Input
-                  type="number"
-                  value={String(load.hours)}
-                  onChange={(e) => update(load.id, { hours: Math.max(0, Number(e.target.value)) })}
-                />
-                <button
-                  className={styles.selectLike}
-                  onClick={() =>
-                    update(load.id, {
-                      period: load.period === 'Day' ? 'Night' : load.period === 'Night' ? 'Both' : 'Day'
-                    })
-                  }
-                  style={{ flex: 1 }}
-                >
-                  {load.period}
-                </button>
-                <button
-                  className={`${styles.priority} ${load.critical ? styles.critical : ''}`}
-                  onClick={() => update(load.id, { critical: !load.critical })}
-                  style={{ flex: 1 }}
-                >
-                  {load.critical ? 'CRIT' : 'OCC'}
-                </button>
-                <button
-                  className={styles.iconBtn}
-                  onClick={() => setLoads((prev) => prev.filter((x) => x.id !== load.id))}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
             </div>
           )))}
         </section>
 
         <aside className={styles.side}>
           <section className={styles.panel}>
-            <div className={styles.sectionTag}>02 / SYSTEM ASSUMPTIONS</div>
+            <div className={styles.sectionTag}>SYSTEM ASSUMPTIONS</div>
             <h2>Sizing inputs</h2>
             <label className={styles.inputField}>
               <div className={styles.labelHead}>
@@ -579,6 +669,53 @@ function App() {
               </div>
               <Input type="number" value={systemVoltage} onChange={(e) => setSystemVoltage(e.target.value)} />
             </label>
+
+            {/* Backup mode selector */}
+            <div className={styles.inputField}>
+              <div className={styles.labelHead}>
+                <span>Backup scope</span>
+                <span className={styles.unitTag}>BATTERY MODE</span>
+              </div>
+              <div className={styles.modeToggle}>
+                <button
+                  id="mode-whole-house"
+                  type="button"
+                  className={`${styles.modeBtn} ${backupMode === 'whole-house' ? styles.modeBtnActive : ''}`}
+                  onClick={() => { setBackupMode('whole-house'); setSavedId(null); }}
+                >
+                  <Home size={13} /> Whole-house
+                </button>
+                <button
+                  id="mode-essential"
+                  type="button"
+                  className={`${styles.modeBtn} ${backupMode === 'essential' ? styles.modeBtnActive : ''}`}
+                  onClick={() => { setBackupMode('essential'); setSavedId(null); }}
+                >
+                  <ShieldCheck size={13} /> Essential-load
+                </button>
+              </div>
+              <p className={styles.modeHint}>
+                {backupMode === 'essential'
+                  ? 'Only CRITICAL appliances counted for battery. Occasional loads excluded from backup energy.'
+                  : 'All appliances (including occasional) counted toward battery backup energy.'}
+              </p>
+            </div>
+
+            {/* Optional budget field */}
+            <label className={styles.inputField}>
+              <div className={styles.labelHead}>
+                <span>Project budget (optional)</span>
+                <span className={styles.unitTag}>₦ OPTIONAL</span>
+              </div>
+              <Input
+                id="project-budget"
+                type="number"
+                placeholder="e.g. 2500000"
+                value={budget}
+                onChange={(e) => { setBudget(e.target.value); setSavedId(null); }}
+              />
+            </label>
+
             <div className={styles.fixed}>
               <ShieldCheck size={17} />
               <div>
@@ -586,10 +723,69 @@ function App() {
                 <p>Fixed engineering headroom applied to inverter and solar array sizing.</p>
               </div>
             </div>
+
+            {/* Cost unit-rate overrides */}
+            <div className={styles.inputField}>
+              <button
+                type="button"
+                className={styles.ratesToggle}
+                onClick={() => setShowRates(v => !v)}
+              >
+                <span>Cost unit rates</span>
+                <span className={styles.ratesFormula}>
+                  ₦{inverterCost.toLocaleString()} + ₦{batteryCost.toLocaleString()} + ₦{solarCost.toLocaleString()}
+                </span>
+                <ChevronDown size={13} className={showRates ? styles.ratesChevronOpen : ''} />
+              </button>
+              {showRates && (
+                <div className={styles.ratesPanel}>
+                  <p className={styles.modeHint}>Edit any rate to correct the cost estimate. Formula: (inverter kVA × ₦/kVA) + (battery kWh × ₦/kWh) + (solar kWp × ₦/kWp).</p>
+                  <div className={styles.ratesGrid}>
+                    <label className={styles.rateField}>
+                      <span className={styles.rateLabel}>Inverter ₦/kVA</span>
+                      <Input
+                        id="rate-kva"
+                        type="number"
+                        value={ratePerKva}
+                        onChange={e => { setRatePerKva(e.target.value); setSavedId(null); }}
+                      />
+                      <span className={styles.rateCalc}>{(totals.inverter / 1000).toFixed(1)} kVA × ₦{Number(ratePerKva).toLocaleString()} = <b>₦{inverterCost.toLocaleString()}</b></span>
+                    </label>
+                    <label className={styles.rateField}>
+                      <span className={styles.rateLabel}>Battery ₦/kWh</span>
+                      <Input
+                        id="rate-kwh"
+                        type="number"
+                        value={ratePerKwh}
+                        onChange={e => { setRatePerKwh(e.target.value); setSavedId(null); }}
+                      />
+                      <span className={styles.rateCalc}>{totals.battery.toFixed(1)} kWh × ₦{Number(ratePerKwh).toLocaleString()} = <b>₦{batteryCost.toLocaleString()}</b></span>
+                    </label>
+                    <label className={styles.rateField}>
+                      <span className={styles.rateLabel}>Solar ₦/kWp</span>
+                      <Input
+                        id="rate-kwp"
+                        type="number"
+                        value={ratePerKwp}
+                        onChange={e => { setRatePerKwp(e.target.value); setSavedId(null); }}
+                      />
+                      <span className={styles.rateCalc}>{totals.array.toFixed(2)} kWp × ₦{Number(ratePerKwp).toLocaleString()} = <b>₦{solarCost.toLocaleString()}</b></span>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
           </section>
+
+          {/* ─── Results panel: Option A (always shown) ──────── */}
           <section className={styles.resultPanel}>
-            <div className={styles.sectionTag}>03 / RECOMMENDATION</div>
-            <h2>System sizing</h2>
+            <div className={styles.sectionTag}>RECOMMENDATION</div>
+            <div className={styles.optionHeader}>
+              <h2>Option A — Full system</h2>
+              <span className={`${styles.modeBadge} ${backupMode === 'essential' ? styles.modeBadgeEssential : styles.modeBadgeWhole}`}>
+                {backupMode === 'essential' ? <><ShieldCheck size={11} /> Essential-load</> : <><Home size={11} /> Whole-house</>}
+              </span>
+            </div>
             <Result
               label="Inverter"
               value={`${(totals.inverter / 1000).toFixed(1)} kVA`}
@@ -598,7 +794,7 @@ function App() {
             <Result
               label="Battery bank"
               value={`${totals.battery.toFixed(1)} kWh`}
-              detail={`${Math.round((totals.battery * 1000) / Number(systemVoltage))} Ah @ ${systemVoltage} V`}
+              detail={`${Math.round((totals.battery * 1000) / Number(systemVoltage))} Ah @ ${systemVoltage} V · DoD 90%`}
             />
             <Result
               label="Solar array"
@@ -611,8 +807,8 @@ function App() {
                 <b>{totals.nightEnergy.toFixed(2)} kWh</b>
               </div>
               <div>
-                <span>Sun hours</span>
-                <b>{sunHours} h</b>
+                <span>Est. cost (approx.)</span>
+                <b>₦{optionACost.toLocaleString()}</b>
               </div>
             </div>
             <Button className={styles.full} onClick={saveEstimate} disabled={saving}>
@@ -620,11 +816,55 @@ function App() {
               {saving ? 'Saving…' : savedId ? 'Estimate saved ✓' : 'Save structured estimate'}
             </Button>
           </section>
+
+          {/* ─── Option B: reduced cost (only when budget < Option A) ── */}
+          {showTiers && (
+            <section className={styles.tierPanel}>
+              <div className={styles.tierHeader}>
+                <div>
+                  <div className={styles.sectionTag} style={{ color: 'rgba(251, 191, 36, 0.9)' }}>OPTION B — REDUCED COST</div>
+                  <h2 className={styles.tierTitle}>Smaller battery &amp; solar</h2>
+                </div>
+                <span className={styles.tierCostBadge}>₦{optionBCost.toLocaleString()}</span>
+              </div>
+              <div className={styles.tierWarning}>
+                <AlertTriangle size={14} />
+                <span>Not equivalent to Option A. Backup duration reduced to ~{optionBBackupH.toFixed(1)} h (was {backup} h). Lower daily self-sufficiency.</span>
+              </div>
+              <div className={styles.tierRows}>
+                <TierRow label="Inverter" value={`${(totals.inverter / 1000).toFixed(1)} kVA`} note="unchanged — sized for full load" />
+                <TierRow label="Battery" value={`${optionBBattery.toFixed(1)} kWh`} note={`${Math.round((optionBBattery * 1000) / Number(systemVoltage))} Ah @ ${systemVoltage} V`} reduced />
+                <TierRow label="Solar" value={`${optionBSolar.toFixed(2)} kWp`} note={`${optionBPanelCount} × 550 W panels`} reduced />
+              </div>
+            </section>
+          )}
+
+          {/* ─── Option C: phased installation (only when budget < Option A) ── */}
+          {showTiers && (
+            <section className={styles.tierPanel}>
+              <div className={styles.tierHeader}>
+                <div>
+                  <div className={styles.sectionTag} style={{ color: 'rgba(167, 139, 250, 0.9)' }}>OPTION C — PHASED INSTALL</div>
+                  <h2 className={styles.tierTitle}>Install now, expand later</h2>
+                </div>
+                <span className={`${styles.tierCostBadge} ${styles.tierCostBadgePurple}`}>₦{optionCPhase1Cost.toLocaleString()}</span>
+              </div>
+              <div className={styles.tierWarning} style={{ borderColor: 'rgba(167, 139, 250, 0.3)', background: 'rgba(167, 139, 250, 0.08)' }}>
+                <Layers size={14} style={{ color: 'rgba(167, 139, 250, 0.9)' }} />
+                <span>Phase 1 now (₦{optionCPhase1Cost.toLocaleString()}) · Phase 2 later (₦{optionCPhase2Cost.toLocaleString()}). Phase 1 backup ~{optionCBackupH.toFixed(1)} h. Inverter is full-size from day one — never undersized.</span>
+              </div>
+              <div className={styles.tierRows}>
+                <TierRow label="Inverter (Phase 1)" value={`${(totals.inverter / 1000).toFixed(1)} kVA`} note="full-size, correct for all loads" />
+                <TierRow label="Battery (Phase 1)" value={`${optionCBattery.toFixed(1)} kWh`} note={`${Math.round((optionCBattery * 1000) / Number(systemVoltage))} Ah · add ${optionCBattery.toFixed(1)} kWh in Phase 2`} reduced />
+                <TierRow label="Solar (Phase 1)" value={`${optionCSolar.toFixed(2)} kWp`} note={`${optionCPanelCount} panels · add ${optionCPanelCount} more in Phase 2`} reduced />
+              </div>
+            </section>
+          )}
         </aside>
       </div>
       <footer className={styles.footer}>
-        <span>LOAD ESTIMATE CALCULATOR · v1</span>
-        <span>Safety margin locked at 25% · Surge separated from daily energy</span>
+        <span>LOAD ESTIMATE CALCULATOR · v2 · DoD 90%</span>
+        <span>Safety margin locked at 25% · Surge model: see ENGINEERING_CHANGELOG.md</span>
       </footer>
     </main>
   );
@@ -661,6 +901,16 @@ function Result({ label, value, detail }: { label: string; value: string; detail
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{detail}</small>
+    </div>
+  );
+}
+
+function TierRow({ label, value, note, reduced }: { label: string; value: string; note: string; reduced?: boolean }) {
+  return (
+    <div className={styles.tierRow}>
+      <span className={styles.tierRowLabel}>{label}</span>
+      <span className={`${styles.tierRowValue} ${reduced ? styles.tierRowValueReduced : ''}`}>{value}</span>
+      <span className={styles.tierRowNote}>{note}</span>
     </div>
   );
 }

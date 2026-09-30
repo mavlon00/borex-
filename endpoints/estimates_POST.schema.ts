@@ -16,6 +16,10 @@ export const schema = z.object({
   recommendedSolarKwp: z.number().nonnegative(),
   panelCount: z.number().int().nonnegative(),
   safetyMargin: z.number().min(0.25),
+  /** 'whole-house' or 'essential' — determines which loads drove the battery figure */
+  backupMode: z.enum(['whole-house', 'essential']).default('whole-house'),
+  /** Optional project budget in local currency (e.g. N450000) */
+  budget: z.number().positive().optional(),
   overrides: z.array(z.object({ field: z.string(), value: z.number(), reason: z.string().min(3).max(500) })).default([]),
   loads: z.array(z.object({ applianceName: z.string(), quantity: z.number().int().positive(), watts: z.number().positive(), hoursPerDay: z.number().min(0), usagePeriod: z.enum(['Day','Night','Both']), critical: z.boolean(), surgeMultiplier: z.number().positive() }))
 });

@@ -36,6 +36,10 @@ export interface SavedEstimate {
   overrides: any[];
   loads: LoadItem[];
   createdAt: string;
+  /** 'whole-house' = all loads; 'essential' = critical-only loads counted for battery */
+  backupMode: 'whole-house' | 'essential';
+  /** Optional project budget (e.g. N450000). Used to generate tiered Option B/C. */
+  budget?: number;
 }
 
 export interface UserSession {
@@ -44,7 +48,9 @@ export interface UserSession {
 }
 
 const STORAGE_KEY_PROJECTS = 'borex_projects_v1';
-const STORAGE_KEY_ESTIMATES = 'borex_estimates_v1';
+// Bumped to v2 on 2026-09-25: old v1 estimates used DoD=0.80 (wrong).
+// On first load after upgrade the demo seed will use the corrected DoD=0.90 values.
+const STORAGE_KEY_ESTIMATES = 'borex_estimates_v2';
 const STORAGE_KEY_AUTH = 'borex_auth_user_v1';
 
 export const defaultSampleLoads: LoadItem[] = [
@@ -118,14 +124,17 @@ const initialEstimates: Record<string, SavedEstimate> = {
     dailyEnergyKwh: 12.83,
     peakSurgeW: 4404,
     recommendedInverterKva: 6.0,
-    recommendedBatteryKwh: 16.0,
-    recommendedBatteryAh: 334,
+    // Corrected 2026-09-25: DoD=0.90 (was 0.80/lead-acid assumption — wrong for LiFePO4)
+    // nightEnergy≈12.0 kWh → battery = 12.0 / 0.90 ≈ 13.3 kWh
+    recommendedBatteryKwh: 13.3,
+    recommendedBatteryAh: 278,
     recommendedSolarKwp: 3.21,
     panelCount: 6,
     safetyMargin: 0.25,
     overrides: [],
     loads: defaultSampleLoads,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    backupMode: 'whole-house'
   }
 };
 

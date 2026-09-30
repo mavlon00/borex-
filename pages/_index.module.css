@@ -296,9 +296,41 @@
   transition: background 0.15s ease;
 }
 
-/* Mobile-only control strip — hidden on desktop */
-.mobileRowControls {
+/* Appliance row controls container */
+.controlsGrid {
+  display: contents;
+}
+
+.controlCell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.controlCellLabel {
   display: none;
+}
+
+.desktopOnly {
+  display: inline-flex;
+  align-items: center;
+}
+
+.mono.desktopOnly {
+  display: block;
+}
+
+.mobileDeleteBtn {
+  display: none;
+}
+
+.mobileWattsBadge {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.mobileEachWatts {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .row:hover {
@@ -317,7 +349,23 @@
   min-width: 0;
 }
 
-.appliance b {
+.applianceDetails {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.applianceTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.applianceTop b {
   display: block;
   font-size: 13px;
   color: #ffffff;
@@ -326,9 +374,17 @@
   text-overflow: ellipsis;
 }
 
-.appliance small {
-  color: rgba(255, 255, 255, 0.45);
+.applianceMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font: 10px var(--font-family-monospace);
+  color: rgba(255, 255, 255, 0.45);
+  flex-wrap: wrap;
+}
+
+.metaDot {
+  color: rgba(255, 255, 255, 0.3);
 }
 
 .loadIcon {
@@ -843,6 +899,199 @@
   /* hidden in mobile media query */
 }
 
+/* ─── Backup mode toggle ─────────────────────────────────── */
+.modeToggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.modeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.7);
+  font: 500 11px var(--font-family-monospace);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.modeBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.modeBtnActive {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: var(--primary);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+}
+
+.modeHint {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+}
+
+/* ─── Option A header with mode badge ───────────────────── */
+.optionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+  flex-wrap: wrap;
+}
+
+.optionHeader h2 {
+  margin: 4px 0 0;
+}
+
+.modeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 600 9px var(--font-family-monospace);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.modeBadgeWhole {
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+}
+
+.modeBadgeEssential {
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+
+/* ─── Option B / C tier panels ──────────────────────────── */
+.tierPanel {
+  background: rgba(10, 16, 32, 0.72);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+  padding: 18px;
+  animation: drawerSlide 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tierHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.tierTitle {
+  font: 600 18px var(--font-family-display);
+  color: #ffffff;
+  margin: 4px 0 0;
+  letter-spacing: 0.01em;
+}
+
+.tierCostBadge {
+  font: 700 14px var(--font-family-monospace);
+  color: var(--primary);
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tierCostBadgePurple {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.12);
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
+.tierWarning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  margin-bottom: 14px;
+  color: #fca5a5;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.tierWarning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.tierRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tierRow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  row-gap: 1px;
+  column-gap: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  align-items: baseline;
+}
+
+.tierRowLabel {
+  font: 500 10px var(--font-family-monospace);
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.tierRowValue {
+  font: 600 15px var(--font-family-monospace);
+  color: #ffffff;
+  text-align: right;
+  grid-row: 1;
+  grid-column: 2;
+}
+
+.tierRowValueReduced {
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.tierRowNote {
+  font: 400 10px var(--font-family-monospace);
+  color: rgba(255, 255, 255, 0.4);
+  grid-row: 2;
+  grid-column: 1 / -1;
+  padding-top: 2px;
+}
+
 /* ─── Footer ──────────────────────────────────────────────── */
 .footer {
   max-width: 1500px;
@@ -952,48 +1201,88 @@
     display: none;
   }
 
+  .desktopOnly {
+    display: none !important;
+  }
+
   .row {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    padding: 12px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: var(--radius-md);
-    margin-bottom: 8px;
-    background: rgba(255, 255, 255, 0.03);
+    margin-bottom: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    transition: all 0.18s ease;
+  }
+
+  .row:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .appliance {
-    margin-bottom: 10px;
+    width: 100%;
+    margin-bottom: 0;
+    align-items: flex-start;
   }
 
-  .appliance b {
+  .applianceTop b {
     font-size: 14px;
     white-space: normal;
+    line-height: 1.35;
   }
 
-  /* Row controls as a flex row on mobile */
-  .mobileRowControls {
-    display: flex;
-    gap: 6px;
+  .mobileDeleteBtn {
+    display: inline-flex;
     align-items: center;
-  }
-
-  .mobileRowControls input {
-    width: 54px;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--radius-sm);
+    color: #fca5a5;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
     flex-shrink: 0;
-    text-align: center;
   }
 
-  /* Hide all desktop grid columns (2nd through 8th child — qty, mono, hours, period, priority, delete, comments) */
-  .row > :nth-child(2),
-  .row > :nth-child(3),
-  .row > :nth-child(4),
-  .row > :nth-child(5),
-  .row > :nth-child(6),
-  .row > :nth-child(7),
-  .row > :nth-child(8) {
-    display: none;
+  .mobileDeleteBtn:hover,
+  .mobileDeleteBtn:active {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.6);
+    color: #ffffff;
+    transform: scale(0.95);
+  }
+
+  .controlsGrid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    width: 100%;
+    margin-top: 2px;
+  }
+
+  .controlCellLabel {
+    display: block;
+    font: 600 9px var(--font-family-monospace);
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+
+  .controlCell input[type="number"],
+  .controlCell button {
+    height: 38px;
+    font-size: 13px;
+    width: 100%;
   }
 
   .presets {
@@ -1074,4 +1363,104 @@
   .side {
     grid-template-columns: 1fr;
   }
+
+  .controlsGrid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .modeToggle {
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .modeBtn {
+    padding: 7px 4px;
+    font-size: 10px;
+  }
+
+  .ratesFormula {
+    font-size: 9px;
+  }
+}
+
+/* ─── Cost unit-rate override panel ─────────────────────── */
+.ratesToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-family-base);
+  text-align: left;
+  transition: all 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+  margin-top: 2px;
+}
+
+.ratesToggle:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.ratesFormula {
+  flex: 1;
+  font: 500 10px var(--font-family-monospace);
+  color: var(--primary);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ratesChevronOpen {
+  transform: rotate(180deg);
+  transition: transform 0.18s ease;
+}
+
+.ratesPanel {
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  animation: drawerSlide 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ratesGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.rateField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rateLabel {
+  font: 600 11px var(--font-family-monospace);
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.rateCalc {
+  font: 400 10px var(--font-family-monospace);
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 1px;
+}
+
+.rateCalc b {
+  color: var(--primary);
+  font-weight: 600;
 }

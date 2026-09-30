@@ -31,3 +31,9 @@
     opacity: 0.75;
   }
 }
+
+@media (max-width: 768px) {
+  .input {
+    font-size: 16px; /* Prevents auto-zoom on iOS */
+  }
+}
